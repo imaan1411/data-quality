@@ -1,9 +1,7 @@
 import gql from "graphql-tag";
 
-class IndicatorRepository{
-
-
-  static getIndicatorListByPage(pageNumber, pageLength) {
+class IndicatorRepository {
+  static getListPage(pageNumber, pageSize) {
     return gql`{
       allIndicators{
         nodes {
@@ -50,6 +48,32 @@ class IndicatorRepository{
         }
       }`
   }
+
+  static getIndicatorToUpdate(id) {
+      return gql`
+    indicatorById(id:` + id + `) {
+          id
+          name
+          description
+          executionOrder
+          flagActive
+          createdDate
+          updatedDate
+          indicatorTypeId       
+      }
+    }`
+  }
+
+    static update() {
+        return gql`
+      mutation updateIndicator($id: Int!, $indicatorPatch: IndicatorPatch!) {
+        updateIndicatorById(input: {id: $id, indicatorPatch: $indicatorPatch}) {
+          indicator {
+            id
+          }
+        } 
+      }`
+    }
 }
 
 export default IndicatorRepository;

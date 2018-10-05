@@ -1,67 +1,59 @@
-# Python CircleCI 2.0 configuration file
-#
-# Check https://circleci.com/docs/2.0/language-python/ for more details
-#
+# .circleci/config.yml
 version: 2
 jobs:
+
   build:
     docker:
-      # specify the version you desire here
-      # use `-browsers` prefix for selenium tests, e.g. `3.6.1-browsers`
       - image: circleci/python:3.6.1
-
-      # Specify service dependencies here if necessary
-      # CircleCI maintains a library of pre-built images
-      # documented at https://circleci.com/docs/2.0/circleci-images/
-      # - image: circleci/postgres:9.4
-
-    working_directory: ~/repo
-
     steps:
       - checkout
-
-      # Download and cache dependencies
-      - restore_cache:
-          keys:
-          - v1-dependencies-{{ checksum "requirements.txt" }}
-          # fallback to using the latest cache if no exact match is found
-          - v1-dependencies-
+      - setup_remote_docker
 
       - run:
-          name: Create Virtual Environment
+          name: Create Docker Compose configuration file
           command: |
-            python3 -m venv dq
+            echo "POSTGRES_USER=postgres" >> ./.env
+            echo "POSTGRES_PASSWORD=password" >> ./.env
+            echo "DATABASE_URL=postgres://postgres:password@db:5432/data_quality" >> ./.env
+            echo "GRAPHQL_URL=http://graphql:5433/graphql" >> ./.env
+            echo "MAIL_HOST=smtp.server.org" >> ./.env
+            echo "MAIL_PORT=25" >> ./.env
+            echo "MAIL_SENDER=change@me.com" >> ./.env
+            echo "NODE_ENV=development" >> ./.env
+            echo "REACT_APP_GRAPHQL_API_URL=http://0.0.0.0:5433/graphql" >> ./.env
 
       - run:
-          name: Install Dependencies
+          name: Build Docker images
           command: |
-            sudo apt-get install unixodbc-dev
-            . dq/bin/activate
-            pip3 install --upgrade pip
-            pip3 install -r requirements.txt
-
-      - save_cache:
-          paths:
-            - ./dq
-          key: v1-dependencies-{{ checksum "requirements.txt" }}
+            docker-compose -f docker-compose.yml -f docker-compose.test.yml build db graphql api app scripts
+            docker-compose -f ./test/docker-compose.yml build
+            docker images
 
       - run:
-          name: Setup Instance
+          name: Run Docker containers
           command: |
-            . dq/bin/activate
-            python3 setup.py
+            docker network create mobydq-network
+            docker volume create mobydq-db-volume
+            docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d db graphql api
+            docker ps -a
 
       - run:
-          name: Start API
+          name: Run backend tests
           command: |
-            . dq/bin/activate
-            python3 api/run.py
-          background: true
+            docker-compose -f ./test/docker-compose.yml up -d
 
       - run:
-          name: Run Tests
+          name: Run frontend tests
           command: |
-            . dq/bin/activate
+            docker exec -it mobydq-app npm test -- --coverage
+
+      - run:
+          name: Run tests
+          command: |
+            echo 'export PYTHONPATH=./test:$PYTHONPATH' >> $BASH_ENV
+            echo 'export PYTHONPATH=./api/init:$PYTHONPATH' >> $BASH_ENV
+            echo 'export PYTHONPATH=./scripts/init:$PYTHONPATH' >> $BASH_ENV
+            source $BASH_ENV
             nose2 --plugin nose2.plugins.junitxml --junit-xml -v
 
       - store_artifacts:
